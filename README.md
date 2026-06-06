@@ -1,6 +1,6 @@
 # Corporate Restructuring: All Sector Layoff Dynamics (2020 - 2023)
 
-## 🔗 [👉 Interactive Report](https://ro-kamath.github.io/Company-Layoff-Dynamics-2020---2023---An-SQL-Analysis-in-R/)
+## 🔗 [👉 Interactive Report](https://ro-kamath.github.io/Company-Layoff-Dynamics-2020-2023-An-SQL-Analysis-in-R/)
 ---
 
 ## 📊 Project Overview
