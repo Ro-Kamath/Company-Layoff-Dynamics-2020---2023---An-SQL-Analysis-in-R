@@ -57,9 +57,9 @@ library(tidytext)
 # Make sure your local MySQL/Postgres server is running!
 con <- dbConnect(RMariaDB::MariaDB(),
                  user = "root",
-                 password = "Munna123@#",
-                 host = "127.0.0.1",
-                 port = 3306)
+                 password = "password",
+                 host = "host",
+                 port = port)
 
 # 3. Read and execute your Parks & Rec SQL file to build the database and tables
 sql_file_path <- "./Beginner - Parks_and_Rec_Create_db.sql"
@@ -80,9 +80,9 @@ if (file.exists(sql_file_path)) {
   dbDisconnect(con)
   con <- dbConnect(RMariaDB::MariaDB(),
                    user = "root",
-                   password = "Munna123@#",
-                   host = "127.0.0.1",
-                   port = 3306,
+                   password = "password",
+                   host = "host",
+                   port = port,
                    dbname = "parks_and_recreation")
   
   # 5. Set global connection for all future SQL chunks
