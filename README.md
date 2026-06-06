@@ -1,11 +1,9 @@
-# Corporate Restructuring Pipeline: Tech Sector Layoff Dynamics (2020 - 2023)
+# Corporate Restructuring Pipeline: All Sector Layoff Dynamics (2020 - 2023)
 
-## 🔗 [👉 Click Here to Launch the Live Interactive Report](https://github.com/Ro-Kamath/Company-Layoff-Dynamics-2020---2023---An-SQL-Analysis-in-R)
-*Explore the complete interactive data tables, collapsible production code blocks, and dynamic responsive layouts.*
-
+## 🔗 [👉 Interactive Report](https://github.com/Ro-Kamath/Company-Layoff-Dynamics-2020---2023---An-SQL-Analysis-in-R)
 ---
 
-## 📊 Executive Project Overview
+## 📊 Project Overview
 This data portfolio asset showcases an end-to-end analytical engineering pipeline. It addresses raw unstructured workforce disruption data by combining **SQL relation transforms** with an advanced **R/ggplot2 visualization framework** built on a unified corporate design system.
 
 ### 🛠️ Core Technology Architecture
@@ -20,14 +18,14 @@ This data portfolio asset showcases an end-to-end analytical engineering pipelin
 ## 📈 Key Visual Insights Showcase
 
 ### 1. Macroeconomic Trajectory (Cumulative Rolling Totals)
-Using an explicit SQL Window frame (`SUM(Total_LaidOff) OVER(ORDER BY MONTH)`), this chart captures the escalating acceleration curve of global technology sector separations over a multi-year horizon.
+Using an explicit SQL Window frame (`SUM(Total_LaidOff) OVER(ORDER BY MONTH)`), this chart captures the escalating acceleration curve of global companies  separations over 3 years from 2020-2023.
 
 * **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/cumulative.pdf)
 
 ### 2. Annual Sector Standouts
 A multi-faceted distribution plot mapping localized enterprise-scale restructuring impact vectors across distinct fiscal years.
 
-* **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/annual_standouts.pdf)
+* **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/yearlytrend.pdf)
 
 ---
 
