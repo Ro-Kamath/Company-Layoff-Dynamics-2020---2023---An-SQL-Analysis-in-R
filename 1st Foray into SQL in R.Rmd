@@ -1,0 +1,1298 @@
+---
+title: "1st Foray into SQL in R"
+subtitle: "Integration of SQL and R to produce visualisations"
+author: "Rohit" 
+output: 
+  html_document:
+    theme: cosmo
+    toc: true            # Generates a Table of Contents
+    toc_float: true      # Makes the TOC float on the left side as you scroll
+    highlight: tango     # Makes your SQL/R syntax highlighting look beautiful
+    code_folding: hide   # Keeps the code panels closed on first view
+    self_contained: true
+---
+
+```{r color_them, include=FALSE}
+library(ggplot2)
+
+# 1. SHARED DESIGN SYSTEM (Run this once at the top of your visualization section)
+brand_colors <- c("#4A6572", "#34495E", "#1A252C", "#E07A5F")
+
+professional_theme <- theme_minimal(base_size = 11) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, color = "#1A252C", margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 9.5, color = "#627D98", margin = margin(b = 15)),
+    axis.title = element_text(face = "bold", size = 10, color = "#334E68"),
+    axis.text = element_text(size = 9, color = "#486581"),
+    panel.grid.major = element_line(color = "#F0F4F8", linewidth = 0.5),
+    panel.grid.minor = element_blank(),
+    legend.position = "top",
+    legend.justification = "left",
+    plot.margin = margin(15, 15, 15, 15),
+    
+    # NEW: Professional styling for the bottom source text
+    plot.caption = element_text(face = "italic", size = 8, color = "#94A3B8", margin = margin(t = 15)),
+    plot.caption.position = "plot" # Left-aligns the caption with the whole plot canvas, not just the grid
+  )
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,        # Shows your SQL and R code in the final report (great for portfolios)
+  results = "hide",   # HIDES all text data table outputs globally!
+  message = FALSE,    # Hides annoying package loading messages
+  warning = FALSE,    # Hides warning messages (like ggplot deprecated guides)
+  comment = NA,       # Removes the default "##" prefix from R console outputs
+  fig.align = "center" # Centers all your ggplot graphs automatically
+)
+
+# 1. Load libraries
+library(DBI)
+library(RMariaDB)  # Swap for RPostgreSQL if using Postgres
+library(tidyverse)
+library(car)       # For advanced statistical testing if needed
+library(tidytext)
+
+# 2. Establish connection to your local database server
+# Make sure your local MySQL/Postgres server is running!
+con <- dbConnect(RMariaDB::MariaDB(),
+                 user = "root",
+                 password = "Munna123@#",
+                 host = "127.0.0.1",
+                 port = 3306)
+
+# 3. Read and execute your Parks & Rec SQL file to build the database and tables
+sql_file_path <- "./Beginner - Parks_and_Rec_Create_db.sql"
+
+if (file.exists(sql_file_path)) {
+  sql_script <- readLines(sql_file_path)
+  # Join lines and split by semicolon to run statements individually
+  sql_commands <- unlist(strsplit(paste(sql_script, collapse = "\n"), ";"))
+  
+  for (cmd in sql_commands) {
+    clean_cmd <- trimws(cmd)
+    if (clean_cmd != "") {
+      dbExecute(con, clean_cmd)
+    }
+  }
+  
+  # 4. Disconnect from bare server and reconnect directly to the new database
+  dbDisconnect(con)
+  con <- dbConnect(RMariaDB::MariaDB(),
+                   user = "root",
+                   password = "Munna123@#",
+                   host = "127.0.0.1",
+                   port = 3306,
+                   dbname = "parks_and_recreation")
+  
+  # 5. Set global connection for all future SQL chunks
+  knitr::opts_chunk$set(connection = "con")
+  
+} else {
+  stop("SQL file not found! Double check your file path string.")
+}
+```
+
+```{r test_connection, include=FALSE}
+# This will print a list of all tables inside your database
+dbListTables(con)
+```
+
+## Introduction
+
+This notebook marks the beginning of my end-to-end data analysis portfolio. By combining the data manipulation power of **SQL** with the statistical and visual capabilities of **R**, I am building a reproducible environment to re-master advanced database concepts and translate raw data into compelling data stories.
+
+The data used throughout this project is based on the *Parks and Recreation* and the *2020-2023 Company Layoffs* datasets, covering foundational queries up to advanced window functions, CTEs, and optimization techniques.
+
+------------------------------------------------------------------------
+
+## Foundational Queries & Filtering
+
+### 1. SELECT statements
+
+Pulling all columns and rows from the `employee_demographics` table to inspect our baseline population.
+
+```{sql SELECT,connection=con, echo = TRUE}
+SELECT 
+  employee_id,
+  first_name,
+  last_name,
+  age,
+  (age+10) AS age_in_a_decade
+FROM employee_demographics;
+```
+
+```{sql DISTINCT, connection=con, echo = TRUE}
+SELECT DISTINCT gender
+FROM employee_demographics;
+
+```
+
+```{sql DEM, connection=con, echo = TRUE}
+SELECT *
+FROM employee_demographics;
+
+```
+
+```{sql SAL, connection=con, echo = TRUE}
+SELECT *
+FROM employee_salary;
+
+```
+
+### 2. Aggregating Data with GROUP BY
+
+The `GROUP BY` clause collapses rows that have the same values into summary rows. Finding out how many employees belong to each gender and calculate their average age.
+
+When using `GROUP BY`, remember any column in your `SELECT` statement that is not part of an aggregate function (like `COUNT`, `AVG`, `MIN`, `MAX`) **must** be listed in the `GROUP BY` clause.
+
+```{sql GROUP BY, connection=con, echo = TRUE}
+SELECT 
+    gender,
+    COUNT(employee_id) AS total_employees,
+    AVG(age) AS average_age,
+    MIN(age) AS youngest_employee,
+    MAX(age) AS oldest_employee
+FROM employee_demographics
+GROUP BY gender;
+```
+
+#### 2.1 HAVING vs WHERE
+
+WHERE filters rows before any grouping happens.
+
+HAVING filters rows after the GROUP BY aggregation has been calculated.
+
+```{sql HAVING vs WHERE, connection=con,echo = TRUE}
+SELECT dept_id,
+    COUNT(employee_id) AS staff_count,
+    ROUND(AVG(salary), 2) AS average_salary
+FROM employee_salary
+GROUP BY dept_id
+HAVING AVG(salary) > 70000;
+```
+
+### 3. Sorting and Limiting Results using ORDER BY and LIMIT
+
+```{sql ORDER BY and LIMIT, connection=con,echo = TRUE}
+SELECT 
+    employee_id,
+    first_name,
+    last_name,
+    salary
+FROM employee_salary
+ORDER BY salary DESC
+LIMIT 3;
+```
+
+### 4. JOINS
+
+Joins allow linking tables together using a common column.
+
+##### 4.1 Inner Join
+
+An Inner Join only returns records where the `employee_id` matches in both tables.
+
+```{sql Inner Join, connection=con,echo = TRUE}
+SELECT 
+    dem.employee_id, 
+    dem.first_name, 
+    dem.last_name, 
+    sal.occupation, 
+    sal.salary
+FROM employee_demographics dem
+INNER JOIN employee_salary sal
+    ON dem.employee_id = sal.employee_id;
+```
+
+##### 4.2. Left Join
+
+A Left Join keeps all rows from the left table (`employee_demographics`), even if they don't have matching salary data.
+
+```{sql Left Join, connection=con,echo = TRUE}
+SELECT 
+    dem.employee_id, 
+    dem.first_name, 
+    dem.last_name, 
+    sal.occupation, 
+    sal.salary
+FROM employee_demographics dem
+LEFT JOIN employee_salary sal
+    ON dem.employee_id = sal.employee_id;
+```
+
+##### 4.3 Right Join
+
+Keeping all rows from `employee_salary` and matching demographic data.
+
+```{sql Right Join, connection=con,echo = TRUE}
+SELECT 
+    sal.employee_id, 
+    sal.first_name, 
+    sal.last_name, 
+    dem.age, 
+    dem.gender
+FROM employee_salary sal
+LEFT JOIN employee_demographics dem
+    ON sal.employee_id = dem.employee_id;
+```
+
+##### 4.4 Self Join
+
+Ties a table to itself.
+
+```{sql SELF JOIN, connection=con,echo = TRUE}
+SELECT 
+    emp1.employee_id    AS emp_santa, 
+    emp2.employee_id    AS emp_name, 
+    CONCAT(emp1.first_name, ' ', emp1.last_name) AS name_santa,
+    CONCAT(emp2.first_name, ' ', emp2.last_name) AS name_emp
+FROM employee_salary AS emp1
+LEFT JOIN employee_salary AS emp2
+    ON emp1.employee_id + 1 = emp2.employee_id;
+```
+
+##### 4.5 Joining Multiple Tables
+
+```{sql, connection=con,echo = TRUE}
+# --- JOINING MULTIPLE TABLES together ---
+select dem.first_name, dem.last_name, occupation,department_name
+from employee_demographics AS dem
+inner join employee_salary AS sal
+	ON dem.employee_id = sal.employee_id
+inner join parks_departments as pd
+	ON sal.dept_id = pd.department_id
+;
+```
+
+### 5. Unions
+
+Combining ROWS of data ACROSS tables`DISTINCT` is for only unique values while `ALL` is used to show all values.
+
+```{sql UNIONS, connection=con,echo = TRUE}
+SELECT first_name, last_name
+FROM employee_demographics as dem
+UNION ALL
+SELECT first_name, last_name
+FROM employee_salary;
+```
+
+```{sql Categorizing Employees, connection=con,echo = TRUE}
+SELECT first_name, last_name, 'Old Man' As Label
+FROM employee_demographics
+WHERE age > 40 AND gender = "Male"
+UNION
+SELECT first_name, last_name, 'Old Lady' As Label
+FROM employee_demographics
+WHERE age > 40 AND gender = "Female"
+UNION
+SELECT first_name, last_name, 'Highly Paid Employee' As Label
+FROM employee_salary
+WHERE salary > 70000
+ORDER BY first_name, last_name;
+```
+
+Goal: Create a highly targeted list of employees based on distinct business rules.
+
+```{sql Identifying the Veterans/High Earners, connection=con,echo = TRUE}
+SELECT 
+    demo.first_name, 
+    demo.last_name, 
+    'Highly Paid Veteran' AS employee_status
+FROM employee_demographics demo
+JOIN employee_salary sal
+    ON demo.employee_id = sal.employee_id
+WHERE demo.age > 55 AND sal.salary > 40000
+
+UNION
+
+SELECT 
+    demo.first_name, 
+    demo.last_name,
+    'Highly Paid Rising Star' AS employee_status
+FROM employee_demographics demo
+JOIN employee_salary sal
+    ON demo.employee_id = sal.employee_id
+WHERE demo.age < 40 AND sal.salary > 40000
+
+ORDER BY last_name ASC; 
+-- Note: The ORDER BY clause goes at the very end of the entire statement,
+--       and it sorts the final combined result set!
+```
+
+### 6. TRIM, STRING, SUBSTRING and REPLACE
+
+REAL WORLD CASE - Phone `#` length
+
+```{sql LENGTH, connection=con,echo = TRUE}
+select first_name, length(first_name)
+FROM employee_demographics
+ORDER BY 2;
+```
+
+```{sql UPPER/LOWER, connection=con, include=FALSE}
+-- select upper('sky');
+-- select lower('SKY');
+```
+
+```{sql UPPER, connection=con}
+select first_name, upper(first_name)
+FROM employee_demographics
+;
+```
+
+TRIM --- Removes Whitespace on LEFT or RIGHT of value
+
+##### 6.1 SUBSTRINGS
+
+RIGHT and LEFT SUBSTRINGS
+
+```{sql LEFT, connection=con,echo = TRUE}
+select first_name, left(first_name,4)
+from employee_demographics;
+```
+
+Substrings
+
+Can get middle of words or dates SUBSTRING(string_expression, start_position, length)
+
+```{sql SUBSTRING, connection=con,echo = TRUE}
+select first_name, 
+left(first_name,4),
+right(first_name,4),
+substring(first_name,3,2),
+birth_date,
+substring(birth_date,6,2) as birth_month
+from employee_demographics;
+```
+
+##### 6.2 REPLACE --- Replaces characters with preferred ones ---
+
+```{sql REPLACE, connection=con,echo = TRUE}
+select first_name, replace(first_name, 'a','z')
+from employee_demographics;
+```
+
+```{sql CONCAT2, connection=con,echo = TRUE}
+# LOCATE 
+# CONCAT --- Combine fields
+select first_name, last_name,
+concat(first_name,' ', last_name) As Full_Name
+from employee_demographics;
+```
+
+### 7. CASE Statements
+
+Goal: Create dynamic columns based on multiple conditional rules.
+
+Note: Every CASE statement must start with `CASE`, contain at least -- one `WHEN/THEN`, an optional `ELSE`, and must close with `END`.
+
+```{sql CASE, connection=con,echo = TRUE}
+SELECT 
+    first_name,
+    last_name,
+    salary,
+    dept_id,
+    
+    -- Example 1: Creating a Text Category (Salary Bands)
+    CASE 
+        WHEN salary >= 60000 THEN 'High Earner'
+        WHEN salary BETWEEN 45000 AND 69999 THEN 'Mid-Tier'
+        ELSE 'Entry Level'
+    END AS salary_bracket,
+    
+    -- Example 2: Performing Math (Dynamic Bonus Structure)
+    -- If they work in Parks (dept_id = 1), they get a 10% bonus.
+    -- If they work in Finance (dept_id = 4), they get a 5% bonus.
+    -- Everyone else gets a 2% bonus.
+    CASE
+        WHEN dept_id = 1 THEN salary * 0.10
+        WHEN dept_id = 4 THEN salary * 0.05
+        ELSE salary * 0.02
+    END AS holiday_bonus
+
+FROM employee_salary
+ORDER BY holiday_bonus DESC;
+```
+
+### 8. Subqueries
+
+```{sql Subqueries, connection=con,echo = TRUE}
+select * 
+from employee_demographics
+where employee_id in 
+				(select employee_id
+					from employee_salary
+                    where dept_id = 1)
+;
+```
+
+```{sql Subqueries2,connection=con,echo = FALSE}
+select first_name, salary, 
+(select avg(salary)
+from employee_salary) As Avg_Salary
+from employee_salary;
+```
+
+```{sql Gender Stats,connection=con,echo = TRUE}
+select gender, avg(age), max(age),min(age),count(age)
+from employee_demographics
+group by gender;
+```
+
+```{sql Subqueries3,connection=con,echo = FALSE}
+select first_name, salary, 
+(select avg(salary)
+from employee_salary) As Avg_Salary
+from employee_salary;
+```
+
+```{sql Gender Table,connection=con,echo = TRUE}
+select avg(max_age)
+from (select 
+	gender, 
+	avg(age) as avg_age, 
+	max(age) as max_age,
+	min(age) as min_age,
+	count(age)
+from employee_demographics
+group by gender) As Aggregated_Table;
+```
+
+```{sql Subqueries4,connection=con,echo = TRUE}
+select first_name, salary, 
+(select avg(salary)
+from employee_salary) As Avg_Salary
+from employee_salary;
+```
+
+### 9. Window Functions
+
+```{sql Window Functions,connection=con,echo = TRUE}
+SELECT gender, avg(salary) as Avg_Salary
+FROM employee_demographics as dem
+JOIN employee_salary as sal
+	ON dem.employee_id=sal.employee_id
+group by gender;
+```
+
+```{sql Window Functions2,connection=con,echo = TRUE}
+SELECT concat(dem.first_name,' ',dem.last_name) AS Name,gender, avg(salary) OVER(partition by gender) As Avg_Salary
+FROM employee_demographics as dem
+JOIN employee_salary as sal
+	ON dem.employee_id=sal.employee_id;
+```
+
+##### 9.1 Rolling Totals
+
+Start at a value and add rows below based on partition
+
+```{sql Rolling Total,connection=con,echo = TRUE}
+SELECT concat(dem.first_name,' ',dem.last_name) AS Name,gender,salary, sum(salary) OVER(partition by gender ORDER BY dem.employee_id) As RollingTotal
+FROM employee_demographics as dem
+JOIN employee_salary as sal
+	ON dem.employee_id=sal.employee_id;
+```
+
+###### 9.2 Special Window Functions
+
+```{sql Special Window Functions,connection=con,echo = TRUE}
+SELECT gender, avg(salary) as Avg_Salary
+FROM employee_demographics as dem
+JOIN employee_salary as sal
+	ON dem.employee_id=sal.employee_id
+group by gender;
+```
+
+##### 9.3 Ranking Functions
+
+1.  **ROW_NUMBER()**: The Strict Counter It assigns a strict, sequential number (1, 2, 3, 4...) to every single row.
+
+    1.  Crucial Rule: It NEVER allows ties. If two people make the exact same salary, it will arbitrarily give one a '2' and the other a '3'.
+
+2.  **RANK()**: The Olympic Medalist It allows ties. If two people have the exact same salary, they get the SAME rank.
+
+    1.  Crucial Rule: It SKIPS numbers after a tie.
+
+    2.  Example: If there's a tie for 2nd place, the output is: 1, 2, 2, 4 (it skips 3),
+
+3.  **DENSE_RANK()**: The Dense/No-Skip Ranker Like RANK(), it allows ties and gives identical salaries the same rank number.
+
+    1.  Crucial Rule: It NEVER skips numbers. It keeps the ranking compact ("dense").
+
+    2.  Example: If there's a tie for 2nd place, the output is: 1, 2, 2, 3 (next person is 3).
+
+```{sql Ranking,connection=con,echo = TRUE}
+SELECT  dem.employee_id,concat(dem.first_name,' ',dem.last_name) AS Name,gender,salary,
+ROW_NUMBER() OVER(PARTITION BY gender ORDER BY salary DESC) As row_num,
+RANK() OVER(PARTITION BY gender ORDER BY salary DESC) As rank_num,
+DENSE_RANK() OVER(PARTITION BY gender ORDER BY salary DESC) As dense_rank_num	
+FROM employee_demographics as dem
+JOIN employee_salary as sal
+	ON dem.employee_id=sal.employee_id;
+```
+
+### 10. Common Table Expression (CTE)
+
+A temporary, named result set which uses the `WITH` function.
+
+```{sql Creating a CTE,connection=con,echo = TRUE}
+WITH CTE_Example (Gender, Avg_Sal,Max_Sal,Min_Sal,Count_Sal)As
+(
+SELECT gender, avg(salary), max(salary),min(salary),count(salary)
+from employee_demographics dem
+join employee_salary sal
+	on dem.employee_id=sal.employee_id
+group by gender
+)
+SELECT *
+FROM CTE_Example
+;
+```
+
+```{sql Joining Tables using CTEs,connection=con,echo = TRUE}
+WITH CTE_Example As
+(
+SELECT employee_id,gender,birth_date
+from employee_demographics
+where birth_date > '1985-01-01'
+),
+CTE_Example2 As
+(
+select employee_id,salary
+from employee_salary
+where salary > 50000
+)
+SELECT *
+FROM CTE_Example
+JOIN CTE_Example2
+	ON CTE_Example.employee_id=CTE_Example2.employee_id
+;
+```
+
+### 11. Stored Procedures
+
+Creating procedures that you run
+
+```{sql Stored Procedures,connection=con,echo = TRUE}
+select *
+from employee_salary;
+```
+
+#### 11.1 PARAMETERS -- Passed as an INPUT into a Stored Procedure
+
+```{R Creating a Stored Procedure,connection=con,echo = TRUE}
+create_proc_sql <- "
+CREATE PROCEDURE salary_finder(p_employee_id INT)
+BEGIN
+    SELECT salary
+    FROM employee_salary
+    WHERE employee_id = p_employee_id;
+END;
+"
+
+# Use dbExecute to create the procedure
+dbExecute(con, create_proc_sql)
+```
+
+```{r, ,echo = TRUE}
+# Call the procedure for employee_id = 7
+result <- dbExecute(con, "CALL salary_finder(6);")
+
+# View the result
+print(result)
+```
+
+### 12. Triggers and Events
+
+BLOCK of CODE that automatically executes when an `EVENT` occurs in a table `AFTER` INSERT - after data is added `BEFORE` INSERT - if data is deleted from the table
+
+```{sql Employee Demo,connection=con,echo = TRUE}
+SELECT *
+from employee_demographics;
+```
+
+```{sql Employee Salaries,connection=con,echo = TRUE}
+SELECT *
+from employee_salary;
+```
+
+##### 12.1 Define the Trigger SQL inside an R multiline string.
+
+```{r Trigger SQL,echo = TRUE}
+dbExecute(con, "DROP TRIGGER IF EXISTS employee_insert;")
+
+trigger_blueprint <- "
+CREATE TRIGGER employee_insert
+    AFTER INSERT ON employee_salary
+    FOR EACH ROW
+BEGIN
+    INSERT INTO employee_demographics (employee_id, first_name, last_name)
+    VALUES (NEW.employee_id, NEW.first_name, NEW.last_name);
+END;
+"
+
+# ==========================================
+# STEP 3: Compile into the Database
+# ==========================================
+dbExecute(con, trigger_blueprint)
+```
+
+```{r Executing a Trigger,echo = TRUE}
+# Insert data into the primary table only
+dbExecute(con, "
+  INSERT INTO employee_salary (employee_id, first_name, last_name, salary) 
+  VALUES (15, 'Ron', 'Swanson', 80000);
+")
+
+# Query the second table to verify the side-effect worked perfectly
+side_effect_check <- dbExecute(con, "SELECT * FROM employee_demographics WHERE employee_id = 15;")
+print(side_effect_check)
+```
+
+```{r EVENT_SCHEDULER, include=FALSE, echo=FALSE}
+dbExecute(con, "SET GLOBAL event_scheduler = ON;")
+print("Success")
+```
+
+### 13. Events
+
+Takes place when SCHEDULED
+
+```{r Events,echo = TRUE}
+# 2. Define the Event logic as an R string
+event_sql <- "
+CREATE EVENT delete_retirees
+ON SCHEDULE EVERY 2 SECOND         -- 1. The Clock: Tells the DB how often to wake up
+DO 
+BEGIN                              -- 2. The Task: What happens when it wakes up
+    DELETE FROM employee_demographics
+    WHERE age >= 60;
+END;
+"
+
+# 3. Compile the event into the database
+dbExecute(con, event_sql)
+
+print("Time-based Event successfully scheduled!")
+```
+
+```{r ViewDem,echo = FALSE}
+# View demographics before the event catches older employees
+print(dbExecute(con, "SELECT * FROM employee_demographics;"))
+```
+
+```{r Check_Auto, include=FALSE}
+# Pause R for 3 seconds to let the database event fire
+#Sys.sleep(3)
+
+# Check the table again to see the automation side-effect
+print(dbExecute(con, "SELECT * FROM employee_demographics;"))
+
+# To PAUSE the event without deleting it:
+dbExecute(con, "ALTER EVENT delete_retirees DISABLE;")
+
+# To RESUME the event:
+dbExecute(con, "ALTER EVENT delete_retirees ENABLE;")
+
+# To completely DELETE the event:
+dbExecute(con, "DROP EVENT IF EXISTS delete_retirees;")
+```
+
+## PROJECT: Data Cleaning
+
+Data Cleaning the *2020-2023 Company Layoffs data* for Analysis
+
+> Step 1: De-duplicate values
+>
+> Step 2: Standardize data
+>
+> Step 3: Null or Blank values
+>
+> Step 4: Remove Any Columns or Rows
+
+```{r Importing a CSV,echo = TRUE}
+dbDisconnect(con)
+# 1. Create an in-memory SQLite database connection
+con <- dbConnect(RSQLite::SQLite(), ":memory:")
+knitr::opts_chunk$set(connection = "con")
+  
+# 2. Read your local CSV file into R
+layoffs_raw <- read_csv("layoffs.csv")
+
+# 3. Write the data frame into your SQL connection as a table named "layoffs"
+dbWriteTable(con, "layoffs", layoffs_raw, overwrite = TRUE)
+```
+
+```{sql DATA CLEANING,connection=con,echo = TRUE}
+-- View all records from the initial raw layoffs table
+SELECT * FROM layoffs LIMIT 10;
+```
+
+### Step 1: Creating a Duplicate Table to preserve raw data
+
+```{sql Creating a Duplicate Table,connection=con,echo = TRUE}
+-- Create and populate the first staging table from the raw data
+CREATE TABLE layoffs_staging AS
+SELECT * FROM layoffs;
+```
+
+```{sql VerifyMigrationofData,connection=con}
+-- Verify the migration
+SELECT * FROM layoffs_staging LIMIT 5;
+```
+
+### Step 2: Check for duplicate values
+
+```{sql Check for duplicates where row_num > 1,connection=con,echo = TRUE}
+WITH duplicate_cte AS (
+    SELECT *,
+    ROW_NUMBER() OVER(
+        PARTITION BY company, location, industry, total_laid_off, 
+                     percentage_laid_off, date, stage, country, funds_raised_millions
+    ) AS row_num
+    FROM layoffs_staging
+)
+SELECT * FROM duplicate_cte 
+WHERE row_num > 1;
+```
+
+Looking at Casper company
+
+```{sql Pick a Company,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging
+WHERE company = 'Casper';
+```
+
+```{sql Layoffs,connection=con,echo = TRUE}
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company,location,industry, total_laid_off, percentage_laid_off, `date`,stage,country,funds_raised_millions) AS ROW_NUM
+FROM layoffs_staging;
+```
+
+```{sql Create Duplicate Table,connection=con,echo = TRUE}
+CREATE TABLE `layoffs_staging2` (
+  `company` text,
+  `location` text,
+  `industry` text,
+  `total_laid_off` int DEFAULT NULL,
+  `percentage_laid_off` text,
+  `date` text,
+  `stage` text,
+  `country` text,
+  `funds_raised_millions` int DEFAULT NULL,
+  `row_num` int
+);
+```
+
+```{sql DataOverview,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2;
+```
+
+```{sql Duplicate Staging Table,connection=con,echo = TRUE}
+INSERT INTO layoffs_staging2
+SELECT *,
+ROW_NUMBER() OVER(
+PARTITION BY company,location,industry, total_laid_off, percentage_laid_off, `date`,stage,country,funds_raised_millions) AS ROW_NUM
+FROM layoffs_staging;
+```
+
+```{sql Check for Duplicates,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2
+WHERE row_num > 1;
+```
+
+```{sql Delete nrows > 1,connection=con,echo = TRUE}
+DELETE
+FROM layoffs_staging2
+WHERE row_num > 1;
+```
+
+```{sql Check for Duplicates Again,connection=con}
+SELECT *
+FROM layoffs_staging2;
+```
+
+### Step 3: Standardizing data
+
+```{sql Trimming Company Data,connection=con,echo = TRUE}
+SELECT company, TRIM(company)
+FROM layoffs_staging2;
+```
+
+```{sql Update_Trimming Company Data,connection=con,echo = TRUE}
+UPDATE layoffs_staging2
+SET company = TRIM(company);
+```
+
+```{sql Check_For_Crypto,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2
+WHERE industry LIKE 'Crypto%';
+```
+
+```{sql Update_Check_For_Crypto,connection=con,echo = TRUE}
+UPDATE layoffs_staging2
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
+```
+
+```{sql Update_Country,connection=con,echo = TRUE}
+SELECT DISTINCT country, TRIM(country, '.')
+FROM layoffs_staging2
+ORDER BY 1;
+```
+
+```{sql Update_US,connection=con,echo = TRUE}
+UPDATE layoffs_staging2
+SET country = RTRIM(country, '.')
+WHERE country LIKE 'United States%';
+```
+
+```{sql View_Trimming Country,connection=con,echo = TRUE}
+SELECT DISTINCT country, TRIM(country)
+FROM layoffs_staging2
+ORDER BY 1;
+```
+
+### Step 4: Formatting dates
+
+```{r Date Formatting,echo = TRUE}
+library(dplyr)
+library(DBI)
+
+# 1. Pull the data into R
+df <- dbGetQuery(con, "SELECT * FROM layoffs_staging2")
+
+# 2. Safely parse dates regardless of input format
+if (is.numeric(df$date) || !any(is.na(as.numeric(na.omit(df$date))))) {
+  # If dates are Excel-style numeric integers
+  df$date <- as.Date(as.numeric(df$date), origin = "1970-01-01")
+} else {
+  # If dates are strings, try standard formats
+  df$date <- as.Date(df$date, tryFormats = c("%Y-%m-%d", "%m/%d/%Y", "%m/%b/%Y", "%Y/%m/%d"))
+}
+
+# 3. Drop rows where dates absolutely couldn't be parsed to avoid downstream 'NA' strings
+df <- df %>% filter(!is.na(date))
+
+# 4. Convert to character string format 'YYYY-MM-DD' which SQLite expects
+df$date <- as.character(df$date)
+
+# 5. Push the cleaned, standardized table back to SQLite
+dbWriteTable(con, "layoffs_staging2", df, overwrite = TRUE)
+```
+
+```{sql Check_FormattedDate,connection=con,echo = TRUE}
+SELECT `date`
+FROM layoffs_staging2
+LIMIT 10;
+```
+
+```{sql Update_Table,connection=con,echo = TRUE}
+UPDATE layoffs_staging2
+SET company = TRIM(company);
+```
+
+```{sql Recheck_Table,connection=con,echo = TRUE}
+SELECT `date`
+FROM layoffs_staging2;
+```
+
+### Step 5: Dealing with Null or Blanks
+
+```{sql Check for Null Values,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+```
+
+```{sql Update_Table_Industry,connection=con,echo = FALSE}
+UPDATE layoffs_staging2
+SET industry = NULL
+WHERE industry = '';
+```
+
+```{sql Recheck_IndustryTable,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2
+WHERE industry is NULL
+OR industry = '';
+```
+
+```{sql Outliers,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2
+WHERE company = '`Ballys Interactive`';
+```
+
+#### Step 5.1: FILLING MISSING VALUES in a FIELD based on KNOWN VALUES
+
+```{sql Filling Missing Values,connection=con,echo = FALSE}
+SELECT t1.industry, t2.industry
+FROM layoffs_staging2 AS t1
+JOIN layoffs_staging2 AS t2
+	ON t1.company = t2.company
+	AND t1.location = t2.location
+WHERE (t1.industry IS NULL OR t1.industry = '')
+  AND t2.industry IS NOT NULL;
+```
+
+```{sql Update Layoffs_Table,connection=con, echo = FALSE}
+UPDATE layoffs_staging2 
+SET industry = (
+    SELECT t2.industry 
+    FROM layoffs_staging2 t2
+    WHERE t2.company = layoffs_staging2.company 
+      AND t2.industry IS NOT NULL
+    LIMIT 1
+)
+WHERE industry IS NULL OR industry = '';
+```
+
+```{sql RecheckTable_Layoffs,connection=con,echo = FALSE}
+SELECT *
+FROM layoffs_staging2;
+```
+
+### Step 6: Remove any columns
+
+```{sql CheckColumns_LaidOff,connection=con,echo = FALSE}
+SELECT *
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+```
+
+```{sql DeleteNULLValues,connection=con,echo = FALSE}
+DELETE
+FROM layoffs_staging2
+WHERE total_laid_off IS NULL
+AND percentage_laid_off IS NULL;
+```
+
+#### Step 6.1:DROPPING COLUMNS
+
+```{sql DropColumns,connection=con,echo = TRUE}
+ALTER TABLE layoffs_staging2
+DROP COLUMN row_num;
+```
+
+```{sql RecheckTable3,connection=con,echo = FALSE}
+SELECT * 
+FROM layoffs_staging2;
+```
+
+## Exploratory Data Analysis of Company Layoffs (2020-2023)
+
+```{sql EDA1,connection=con,echo = TRUE}
+SELECT *
+FROM layoffs_staging2;
+```
+
+```{sql EDA2,connection=con,echo = TRUE}
+SELECT MAX(total_laid_off), MAX(percentage_laid_off)
+FROM layoffs_staging2;
+```
+
+```{sql EDA3,connection=con,echo = TRUE}
+SELECT company, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY company
+ORDER BY 2 DESC;
+```
+
+```{sql EDA4,connection=con,echo = TRUE}
+SELECT MIN(`date`), MAX(`date`)
+FROM layoffs_staging2;
+```
+
+```{sql EDA5,connection=con,echo = FALSE}
+SELECT country, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY country
+ORDER BY 2 DESC;
+```
+
+```{sql EDA6,connection=con,echo = FALSE}
+SELECT stage, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY stage
+ORDER BY 2 DESC;
+```
+
+```{sql EDA7,connection=con,echo = FALSE}
+SELECT country, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY country
+ORDER BY 2 DESC;
+```
+
+### Rolling Totals Analysis
+
+```{sql RollingTotalsofLayoffs,connection=con,output.var="rolling_layoffs",echo = TRUE}
+WITH Rolling_Total AS (
+  SELECT 
+    substr(`date`, 1, 7) AS `MONTH`, 
+    SUM(total_laid_off) AS Total_LaidOff
+  FROM layoffs_staging2
+  WHERE substr(`date`, 1, 7) IS NOT NULL
+  GROUP BY `MONTH`
+)
+SELECT 
+  `MONTH`, 
+  Total_LaidOff,
+  SUM(Total_LaidOff) OVER(ORDER BY `MONTH`) AS Rolling_total
+FROM Rolling_Total
+ORDER BY `MONTH` ASC;
+```
+
+```{r RollingTotalGraph, include=TRUE,echo=TRUE}
+library(dplyr)
+library(ggplot2)
+
+# 1. Force Column Headers to Uppercase to prevent casing mismatch errors
+colnames(rolling_layoffs) <- toupper(colnames(rolling_layoffs))
+
+# 2. Convert YYYY-MM string paths into a true calendar date sequence
+rolling_cleaned <- rolling_layoffs %>%
+  filter(!is.na(MONTH), MONTH != "", MONTH != "NA") %>%
+  mutate(
+    # Appends day "-01" to "YYYY-MM" to enable clean chronologic timeline parsing
+    Timeline_Date = as.Date(paste0(MONTH, "-01")),
+    ROLLING_TOTAL  = as.numeric(ROLLING_TOTAL)
+  ) %>%
+  filter(!is.na(Timeline_Date))
+
+# 3. Build the Corporate Portfolio Area-Line Visualization
+RollingTotalsPlot <- ggplot(rolling_cleaned, aes(x = Timeline_Date, y = ROLLING_TOTAL)) +
+  # Add a subtle, translucent professional canvas gradient shadow
+  geom_area(fill = "#4A6572", alpha = 0.15) +
+  # Main tracking growth line
+  geom_line(color = "#34495E", linewidth = 1.2) +
+  # Individual localized data nodes
+  geom_point(color = "#E07A5F", size = 1.8) +
+  
+  # Format X-axis timeline ticks neatly spaced every 4 months
+  scale_x_date(date_labels = "%b %Y", date_breaks = "4 months") +
+  # Formats raw large numbers with readable commas (e.g., 150,000)
+  scale_y_continuous(labels = scales::label_comma()) +
+  
+  labs(
+    title = "Cumulative Company Layoffs",
+    subtitle = "Chronological aggregation of global workforce restructuring volumes (2020 - 2023)",
+    x = "Time",
+    y = "Total Laidoff",
+    caption = "Source: Real-world tech sector tracking metrics via Layoffs.fyi"
+  ) +
+  
+  # APPLY SHARED STYLE HERE:
+  professional_theme +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Quick date text angle override
+
+# 4. Save a high-fidelity vector copy asset to your local project directory
+ggsave(
+  filename = "Cumulative Rolling Total of Layoffs between 2020−2023.pdf",
+  plot = RollingTotalsPlot,
+  width = 10,
+  height = 5.5,
+  dpi = 300
+)
+
+# 5. Output cleanly onto your active notebook HTML markdown canvas
+RollingTotalsPlot
+```
+
+### Company Layoffs Analysis
+```{sql CompanyLayoffs1,connection=con,echo = TRUE}
+SELECT TRIM(company) As Company, SUM(total_laid_off)
+FROM layoffs_staging2
+GROUP BY company
+ORDER BY 2 DESC;
+```
+
+```{sql CompanyLayoffs2,connection=con,output.var="company_yearly_layoffs",echo = TRUE}
+SELECT 
+  company AS Company, 
+  strftime('%Y', `date`) AS year_, 
+  SUM(total_laid_off) AS Total_Laid_Off
+FROM layoffs_staging2
+WHERE `date` IS NOT NULL 
+  AND `date` != '' 
+  AND `date` != 'NA'
+GROUP BY company, year_
+HAVING year_ IS NOT NULL AND year_ != 'NA'
+ORDER BY Total_Laid_Off DESC;
+```
+
+
+```{r YearlyCompanyLayoffsGraph,echo = TRUE}
+library(dplyr)
+library(ggplot2)
+
+# 1. Standardize column names to UPPERCASE
+colnames(company_yearly_layoffs) <- toupper(colnames(company_yearly_layoffs))
+
+# 2. Find the top 10 companies using the new UPPERCASE column names
+top_10_companies <- company_yearly_layoffs %>%
+  group_by(COMPANY) %>%                                      
+  summarise(GRAND_TOTAL = sum(TOTAL_LAID_OFF, na.rm = TRUE)) %>% 
+  slice_max(GRAND_TOTAL, n = 10) %>%
+  pull(COMPANY)                                              
+
+# 3. Assign the pipeline outcome right from the start and pipe into ggplot
+YearTrendLayoffs <- company_yearly_layoffs %>%
+  filter(COMPANY %in% top_10_companies, !is.na(YEAR_)) %>%
+  mutate(YEAR_ = as.factor(YEAR_)) %>% 
+  ggplot(aes(x = reorder(COMPANY, TOTAL_LAID_OFF), y = TOTAL_LAID_OFF, fill = YEAR_)) +
+    geom_col(position = "dodge") +
+    coord_flip() +
+    scale_fill_brewer(palette = "Dark2") + 
+    labs(
+      title = "Yearly Breakdown for Top 10 Laying-Off Companies (2020-2023)", 
+      x = "Company", 
+      y = "Number of Layoffs", 
+      fill = "Year",
+      caption = "Source: Real-world tech sector tracking metrics via Layoffs.fyi"
+    ) +
+  
+    # APPLY SHARED STYLE HERE (Facets look great with the clean white canvas theme):
+    scale_fill_manual(values = brand_colors) + 
+    professional_theme +
+    theme(panel.spacing = unit(1.5, "lines")) # Quick layout padding override
+
+# 4. EXPORT THE PLOT IN HIGH QUALITY
+ggsave(
+  filename = "Yearly Trend of Company Layoffs 2020-2023.pdf",
+  plot = YearTrendLayoffs,  # Explicitly tell ggsave which plot object to export
+  #width = 10,
+  #height = 6,
+  #dpi = 300
+)
+
+# 5. Print the graph into the Markdown report
+YearTrendLayoffs
+```
+
+### Layoffs Rankings
+
+Using CAST
+
+```{sql Top5Companies_20202023,connection=con,output.var="top_5_per_year",echo=TRUE}
+WITH Company_Year AS (
+  SELECT 
+    company AS Company, 
+    strftime('%Y', `date`) AS Years,
+    SUM(total_laid_off) AS Total_Laid_Off
+  FROM layoffs_staging2
+  WHERE total_laid_off IS NOT NULL 
+    AND `date` IS NOT NULL
+    AND `date` != ''
+    AND `date` != 'NA'
+  GROUP BY company, Years
+), 
+Company_Year_Rank AS (
+  SELECT 
+    Company,
+    Years,
+    Total_Laid_Off,
+    DENSE_RANK() OVER (PARTITION BY Years ORDER BY Total_Laid_Off DESC) AS Ranking
+  FROM Company_Year
+  WHERE Years IS NOT NULL 
+    AND Years != 'NA' 
+    AND CAST(Years AS INTEGER) >= 2020
+)
+SELECT Company, Years, Total_Laid_Off, Ranking
+FROM Company_Year_Rank
+WHERE Ranking <= 5;
+```
+
+```{r, include=FALSE, echo=FALSE}
+print("--- DATA SUMMARY ---")
+print(paste("Total rows fetched:", nrow(top_5_per_year)))
+
+print("--- DATA STRUCTURE ---")
+str(top_5_per_year)
+
+print("--- FIRST 5 ROWS ---")
+head(top_5_per_year, 5)
+```
+
+```{r Top5Companies_layoffs,echo = TRUE}
+library(ggplot2)
+library(dplyr)
+
+# 1. FORCE CASE-INSENSITIVITY: Convert data frame headers to uppercase
+colnames(top_5_per_year) <- toupper(colnames(top_5_per_year))
+
+# 2. EMERGENCY SAFETY CHECK: Prevents the knit from breaking if SQL returns 0 rows
+if (nrow(top_5_per_year) == 0) {
+  
+  plot(0, type='n', axes=FALSE, ann=FALSE)
+  text(1, 0, "ERROR: SQL Query returned 0 rows. Check your date formatting.", cex=1.2, col="red")
+  
+} else {
+  
+# 3. RUN PLOTTING PIPELINE WITH UPDATED UPPERCASE COLUMN NAMES
+top5companies_layoffs <- top_5_per_year %>%
+  # Filter out empty rows just in case the dataset came back blank
+  filter(!is.na(COMPANY), COMPANY != "") %>% 
+  
+  # Ensure YEARS is treated as a factor so reordering works cleanly
+  mutate(YEARS = as.factor(YEARS)) %>% 
+  mutate(COMPANY = tidytext::reorder_within(COMPANY, TOTAL_LAID_OFF, YEARS)) %>%
+  
+  ggplot(aes(x = COMPANY, y = TOTAL_LAID_OFF, fill = YEARS)) +
+  geom_col(show.legend = FALSE) +
+  tidytext::scale_x_reordered() +
+  coord_flip() +
+  facet_wrap(~YEARS, scales = "free_y") +
+  
+  scale_fill_brewer(palette = "Set2") + 
+  
+  labs(
+    title = "Top 5 Companies with Highest Layoffs Per Year",
+    subtitle = "(2020-2023)",
+    x = "Company",
+    y = "Total Laid Off",
+    caption = "Source: Real-world tech sector tracking metrics via Layoffs.fyi"
+  ) +
+  
+  # APPLY SHARED STYLE HERE (Facets look great with the clean white canvas theme):
+    scale_fill_manual(values = brand_colors) + 
+    professional_theme +
+    theme(panel.spacing = unit(1.5, "lines")) # Quick layout padding override
+
+# 3. EXPORT THE PLOT IN HIGH QUALITY
+ggsave(
+  filename = "Top 5 Companies Layoffs 2020-2023.pdf", # The name of your file
+#  width = 10,                            # Width in inches
+#  height = 6,                            # Height in inches
+#  dpi = 300                              # 300 DPI is standard crisp print quality
+)
+
+# 3. Print the graph into the Markdown report
+top5companies_layoffs
+}
+```
+
+```{r reconnect-to-mariadb, message=FALSE, warning=FALSE,include=FALSE}
+# 1. Disconnect from the temporary SQLite session
+if (exists("con")) dbDisconnect(con)
+
+# 2. Reconnect to your local MariaDB Parks & Rec instance
+con <- dbConnect(RMariaDB::MariaDB(),
+                 user = "root",
+                 password = "Munna123@#",
+                 host = "127.0.0.1",
+                 port = 3306,
+                 dbname = "parks_and_recreation")
+
+# 3. Reset the knitr environment driver option back to MariaDB
+knitr::opts_chunk$set(connection = "con")
+```
