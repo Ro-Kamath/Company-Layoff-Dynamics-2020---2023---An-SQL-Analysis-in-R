@@ -27,7 +27,7 @@ Using an explicit SQL Window frame (`SUM(Total_LaidOff) OVER(ORDER BY MONTH)`), 
 ### 2. Annual Sector Standouts
 A multi-faceted distribution plot mapping localized enterprise-scale restructuring impact vectors across distinct fiscal years.
 
-![Annual Sector Standouts Facetted Chart](./assets/top10companylayoffs.png)
+![Annual Sector Standouts Facetted Chart](./assets/yearly_trend.png)
 
 * **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/yearlytrend.pdf)
 
