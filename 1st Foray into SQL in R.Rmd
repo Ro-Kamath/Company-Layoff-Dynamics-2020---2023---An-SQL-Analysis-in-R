@@ -1288,9 +1288,9 @@ if (exists("con")) dbDisconnect(con)
 # 2. Reconnect to your local MariaDB Parks & Rec instance
 con <- dbConnect(RMariaDB::MariaDB(),
                  user = "root",
-                 password = "Munna123@#",
-                 host = "127.0.0.1",
-                 port = 3306,
+                 password = "password",
+                 host = "host",
+                 port = prt,
                  dbname = "parks_and_recreation")
 
 # 3. Reset the knitr environment driver option back to MariaDB
