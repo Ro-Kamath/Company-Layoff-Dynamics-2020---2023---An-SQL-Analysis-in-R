@@ -20,10 +20,14 @@ This data portfolio asset showcases an end-to-end analytical engineering pipelin
 ### 1. Macroeconomic Trajectory (Cumulative Rolling Totals)
 Using an explicit SQL Window frame (`SUM(Total_LaidOff) OVER(ORDER BY MONTH)`), this chart captures the escalating acceleration curve of global companies  separations over 3 years from 2020-2023.
 
+![Macroeconomic Cumulative Layoffs](./assets/rolling_totals.png)
+
 * **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/cumulative.pdf)
 
 ### 2. Annual Sector Standouts
 A multi-faceted distribution plot mapping localized enterprise-scale restructuring impact vectors across distinct fiscal years.
+
+![Annual Sector Standouts Facetted Chart](./assets/top10companylayoffs.png)
 
 * **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/yearlytrend.pdf)
 
