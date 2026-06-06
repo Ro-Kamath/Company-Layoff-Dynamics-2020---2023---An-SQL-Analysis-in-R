@@ -22,7 +22,7 @@ This data portfolio asset showcases an end-to-end analytical engineering pipelin
 ### 1. Macroeconomic Trajectory (Cumulative Rolling Totals)
 Using an explicit SQL Window frame (`SUM(Total_LaidOff) OVER(ORDER BY MONTH)`), this chart captures the escalating acceleration curve of global technology sector separations over a multi-year horizon.
 
-* **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/rolling_totals.pdf)
+* **Asset Output:** [Download High-Resolution Vector (PDF)](./assets/cumulative.pdf)
 
 ### 2. Annual Sector Standouts
 A multi-faceted distribution plot mapping localized enterprise-scale restructuring impact vectors across distinct fiscal years.
@@ -33,5 +33,5 @@ A multi-faceted distribution plot mapping localized enterprise-scale restructuri
 
 ## 📂 Deliverables & Repository Map
 * **`/index.html`**: The fully compiled production report containing embedded web tables and collapsible logic layers.
-* **`/script_pipeline.Rmd`**: The reproducible source code document utilizing custom `ggplot2` thematic object inheritance.
+* **`/1st Foray into SQL in R.Rmd`**: The reproducible source code document utilizing custom `ggplot2` thematic object inheritance.
 * **`/assets/`**: Print-ready, vector-graphic visualization files optimized for executive presentations and data slide decks.
